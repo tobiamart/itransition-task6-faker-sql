@@ -15,7 +15,7 @@
   <div class="row g-3 align-items-end">
     <div class="col-12 col-md-4">
       <label class="form-label small fw-semibold" for="locale">Locale</label>
-      <select class="form-select" id="locale" name="locale" onchange="this.form.batch.value=0; this.form.submit()">
+      <select class="form-select" id="locale" name="locale">
         {% for l in locales %}<option value="{{ l.code }}" {% if l.code == locale %}selected{% endif %}>{{ l.name }} ({{ l.code }})</option>{% endfor %}
       </select>
     </div>
@@ -23,19 +23,19 @@
       <label class="form-label small fw-semibold" for="seed">Seed</label>
       <div class="input-group">
         <input class="form-control" id="seed" name="seed" type="number" min="0" value="{{ seed }}" required>
-        <button class="btn btn-outline-secondary" type="button" title="Random seed"
-                onclick="this.form.seed.value={{ random_seed }}; this.form.batch.value=0; this.form.submit()"><i class="bi bi-shuffle"></i></button>
+        <button class="btn btn-outline-secondary" type="button" title="Random seed" id="random-seed"
+                data-seed="{{ random_seed }}"><i class="bi bi-shuffle"></i></button>
       </div>
     </div>
     <div class="col-6 col-md-2">
       <label class="form-label small fw-semibold" for="size">Batch size</label>
-      <select class="form-select" id="size" name="size" onchange="this.form.batch.value=0; this.form.submit()">
+      <select class="form-select" id="size" name="size">
         {% for s in sizes %}<option value="{{ s }}" {% if s == size %}selected{% endif %}>{{ s }}</option>{% endfor %}
       </select>
     </div>
     <div class="col-6 col-md-2 d-grid">
       <input type="hidden" name="batch" value="{{ batch }}">
-      <button class="btn btn-brand" type="submit" onclick="this.form.batch.value=0"><i class="bi bi-arrow-repeat me-1"></i>Generate</button>
+      <button class="btn btn-brand" type="submit"><i class="bi bi-arrow-repeat me-1"></i>Generate</button>
     </div>
   </div>
 </form>
@@ -80,4 +80,16 @@
   · JSON: <a href="/api/users?locale={{ locale }}&seed={{ seed }}&batch={{ batch }}&size={{ size }}">/api/users</a>.
   The same locale, seed, batch and position always give the same user.
 </p>
+<script nonce="{{ g.nonce }}">
+  // Changing an argument starts again from the first batch.
+  const form = document.getElementById('args');
+  const restart = () => { form.batch.value = 0; form.submit(); };
+  form.locale.addEventListener('change', restart);
+  form.size.addEventListener('change', restart);
+  form.addEventListener('submit', () => { form.batch.value = 0; });
+  document.getElementById('random-seed').addEventListener('click', (e) => {
+    form.seed.value = e.currentTarget.dataset.seed;
+    restart();
+  });
+</script>
 {% endblock %}

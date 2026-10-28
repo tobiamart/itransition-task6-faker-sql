@@ -5,20 +5,25 @@ this app only calls them and renders the result.
 """
 import os
 import random
+import secrets
 import time
 from pathlib import Path
 
 import markdown
 import psycopg
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, g, jsonify, render_template, request
 from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parent
 app = Flask(__name__, template_folder=str(ROOT / 'templates'))
 
 BATCH_SIZES = (10, 20, 50)
+BENCHMARK_SIZES = (1000, 5000, 10000, 20000)
+BENCHMARK_CACHE_SECONDS = 300   # repeated runs reuse the result instead of loading the database
+STATEMENT_TIMEOUT = '30s'
 SEED_MAX = 2 ** 53 - 1
 _conn = None
+_benchmark_cache = {}
 
 
 def database_url():
@@ -39,12 +44,17 @@ def db():
 
 
 def query(sql, params=()):
+    def run():
+        conn = db()
+        with conn.transaction():   # SET LOCAL keeps the timeout inside this transaction (pooler safe)
+            conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
+            return conn.execute(sql, params).fetchall()
     try:
-        return db().execute(sql, params).fetchall()
+        return run()
     except psycopg.OperationalError:
         global _conn
         _conn = None
-        return db().execute(sql, params).fetchall()
+        return run()
 
 
 def locales():
@@ -100,15 +110,23 @@ def api_users():
 
 @app.get('/benchmark')
 def benchmark():
-    results = []
+    results, cached_at = [], None
+    n = int_arg('n', 10000, 1, 10 ** 6)
+    if n not in BENCHMARK_SIZES:
+        abort(400, f'n must be one of {", ".join(map(str, BENCHMARK_SIZES))}')
     if request.args.get('run'):
-        n = int_arg('n', 10000, 100, 50000)
-        for code in [l['code'] for l in locales()]:
-            t = time.perf_counter()
-            r = query('SELECT * FROM faker.benchmark(%s, %s)', (code, n))[0]
-            r['roundtrip'] = time.perf_counter() - t
-            results.append(r)
-    return render_template('benchmark.html', results=results, n=request.args.get('n', 10000))
+        hit = _benchmark_cache.get(n)
+        if hit and time.time() - hit[0] < BENCHMARK_CACHE_SECONDS:
+            cached_at, results = hit
+        else:
+            for code in [l['code'] for l in locales()]:
+                t = time.perf_counter()
+                r = query('SELECT * FROM faker.benchmark(%s, %s)', (code, n))[0]
+                r['roundtrip'] = time.perf_counter() - t
+                results.append(r)
+            _benchmark_cache[n] = (time.time(), results)
+    return render_template('benchmark.html', results=results, n=n, sizes=BENCHMARK_SIZES,
+                           cached_age=None if cached_at is None else int(time.time() - cached_at))
 
 
 @app.get('/docs')
@@ -116,6 +134,25 @@ def docs():
     text = (ROOT / 'docs' / 'FAKER_SQL.md').read_text(encoding='utf-8')
     html = markdown.markdown(text, extensions=['tables', 'fenced_code', 'toc'])
     return render_template('docs.html', content=html)
+
+
+@app.before_request
+def make_nonce():
+    g.nonce = secrets.token_urlsafe(16)
+
+
+@app.after_request
+def security_headers(response):
+    nonce = getattr(g, 'nonce', '')
+    response.headers['Content-Security-Policy'] = (
+        f"default-src 'self'; script-src 'nonce-{nonce}'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "font-src https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    return response
 
 
 @app.errorhandler(400)
