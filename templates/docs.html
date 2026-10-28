@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Documentation · Faker SQL{% endblock %}
+{% block style %}
+  .doc { max-width: 900px; }
+  .doc h1 { font-size: 1.6rem; }
+  .doc h2 { font-size: 1.25rem; margin-top: 2rem; padding-bottom: .3rem; border-bottom: 1px solid #e5e7eb; }
+  .doc h3 { font-size: 1.05rem; margin-top: 1.5rem; }
+  .doc pre { background: #1f2933; color: #e4e7eb; padding: 12px 14px; border-radius: 8px; font-size: .82rem; }
+  .doc code { color: #1d3a55; }
+  .doc pre code { color: inherit; }
+  .doc table { width: 100%; font-size: .875rem; margin-bottom: 1rem; }
+  .doc th, .doc td { border: 1px solid #e5e7eb; padding: 4px 8px; vertical-align: top; }
+  .doc th { background: #f8f9fa; }
+{% endblock %}
+{% block content %}
+<article class="panel doc mx-auto">{{ content|safe }}</article>
+{% endblock %}

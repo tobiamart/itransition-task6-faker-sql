@@ -1,0 +1,9 @@
+.venv
+.pgdata
+tests
+tools
+__pycache__
+.agents
+.claude
+skills-lock.json
+.env*
